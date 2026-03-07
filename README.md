@@ -55,7 +55,7 @@ If you want to allow other people, ask them to do the same and give you their ID
 ## Step 2 — Download the project
 
 ```bash
-git clone https://github.com/yourname/maman-books.git
+git clone https://github.com/Zoeille/maman-books.git
 cd maman-books
 ```
 
