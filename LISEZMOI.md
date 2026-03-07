@@ -121,6 +121,21 @@ ANNA_ARCHIVE_URL=https://example.com
 > Pour ajouter plusieurs personnes autorisées, sépare leurs identifiants par des virgules :
 > `ALLOWED_USER_IDS=123456789,987654321,555555555`
 
+**Paramètres optionnels :**
+
+| Ligne | À quoi ça sert |
+|---|---|
+| `ALLOWED_FORMATS=epub,pdf` | Le format dans lequel tu veux recevoir tes livres (voir détail ci-dessous). |
+| `VIRUSTOTAL_API_KEY=` | Clé API [VirusTotal](https://www.virustotal.com) pour scanner les fichiers avant de les recevoir. Laisse vide pour désactiver. |
+
+**Quel format choisir ?**
+
+Le bot peut te donner les livres en **EPUB** (idéal pour les liseuses et applications de lecture) ou en **PDF** (s'ouvre partout, mise en page fixe). Tu as trois options :
+
+- `ALLOWED_FORMATS=epub,pdf` — le bot te **demande à chaque fois** quel format tu veux (comportement par défaut)
+- `ALLOWED_FORMATS=epub` — tu reçois **toujours de l'EPUB**, sans question
+- `ALLOWED_FORMATS=pdf` — tu reçois **toujours du PDF**, le bot convertit automatiquement
+
 6. **Enregistre le fichier** (Ctrl+S) et ferme le Bloc-notes
 
 ---
@@ -130,7 +145,7 @@ ANNA_ARCHIVE_URL=https://example.com
 1. Dans le dossier `maman-books`, double-clique sur le fichier **`lancer.bat`**
 2. Une fenêtre noire s'ouvre — c'est normal, ne la ferme pas !
 3. La première fois, ça installe les dépendances automatiquement (ça peut prendre une minute)
-4. Quand tu vois `Bot started.` dans la fenêtre, le bot est prêt
+4. La fenêtre affiche d'abord la configuration active (sources activées, VirusTotal, formats…), puis `Bot started.` quand le bot est prêt
 
 Ouvre Telegram, trouve ton bot par son nom d'utilisateur, envoie `/start` et c'est parti ! 🎉
 
@@ -144,7 +159,10 @@ Ouvre Telegram, trouve ton bot par son nom d'utilisateur, envoie `/start` et c'e
 1. Envoie un titre de livre au bot
 2. Il cherche et t'affiche une liste de résultats
 3. Appuie sur un résultat
-4. Le fichier t'est envoyé directement dans Telegram 📖
+4. Si c'est un epub et que tu as configuré `ALLOWED_FORMATS=epub,pdf`, le bot te demande : **EPUB ou PDF ?**
+5. Le fichier t'est envoyé directement dans Telegram 📖
+
+> Si tu as activé VirusTotal, le fichier est analysé automatiquement avant d'être envoyé. S'il est détecté comme dangereux, le bot le bloque et t'en informe.
 
 ---
 

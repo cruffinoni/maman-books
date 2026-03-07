@@ -1,5 +1,6 @@
 import asyncio
 import glob
+import httpx
 import logging
 import os
 import re
@@ -22,20 +23,13 @@ from telegram.ext import (
 import anna_archive
 import prowlarr
 import downloader
+import converter
+import virustotal
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
-
-# Warn about non-numeric values in ALLOWED_USER_IDS
-for _uid in os.environ.get("ALLOWED_USER_IDS", "").split(","):
-    _uid = _uid.strip()
-    if _uid:
-        try:
-            int(_uid)
-        except ValueError:
-            logger.warning(f"ALLOWED_USER_IDS: ignoring non-numeric value {_uid!r}")
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 ALLOWED_USER_IDS: set[int] = set()
@@ -45,13 +39,21 @@ for _uid in os.environ.get("ALLOWED_USER_IDS", "").split(","):
         try:
             ALLOWED_USER_IDS.add(int(_uid))
         except ValueError:
-            pass  # sera loggé après l'init du logger
+            logger.warning(f"ALLOWED_USER_IDS: ignoring non-numeric value {_uid!r}")
 LOCAL_API_SERVER = os.environ.get("LOCAL_API_SERVER", "").rstrip("/")
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "Zoeille/maman-books")
+_VALID_FORMATS = {"epub", "pdf"}
+ALLOWED_FORMATS: list[str] = [
+    f for f in (s.strip() for s in os.environ.get("ALLOWED_FORMATS", "epub,pdf").split(","))
+    if f in _VALID_FORMATS
+] or ["epub"]  # fallback si la valeur env est invalide
+VERSION = "1.1.0"
 MAX_RESULTS = 10
 MAX_FILE_SIZE = 400 * 1024 * 1024 if LOCAL_API_SERVER else 50 * 1024 * 1024
 MAX_QUERY_LENGTH = 200
 RATE_LIMIT_SECONDS = 5
 _CANCEL_KB = InlineKeyboardMarkup([[InlineKeyboardButton("⛔ Annuler", callback_data="cancel_dl")]])
+_notified_update: str | None = None  # tag already notified in this process run
 
 
 def _fmt_size(size_bytes: int) -> str:
@@ -78,6 +80,52 @@ def _cleanup_orphaned_temp_files() -> None:
 def _is_allowed(update: Update) -> bool:
     uid = update.effective_user.id if update.effective_user else None
     return uid in ALLOWED_USER_IDS
+
+
+def _is_newer_version(remote: str, local: str) -> bool:
+    """Return True if remote tag is strictly greater than local version."""
+    def parse(v: str) -> tuple:
+        try:
+            return tuple(int(x) for x in v.lstrip("v").split("."))
+        except ValueError:
+            return (0,)
+    return parse(remote) > parse(local)
+
+
+async def check_for_updates(context: ContextTypes.DEFAULT_TYPE) -> None:
+    global _notified_update
+    if not GITHUB_REPO:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": "maman-books-bot"}) as client:
+            resp = await client.get(
+                f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
+                headers={"Accept": "application/vnd.github+json"},
+            )
+            if resp.status_code == 404:
+                return  # pas encore de release
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        logger.warning(f"Update check failed: {e}")
+        return
+
+    tag = data.get("tag_name", "")
+    if not tag or tag == _notified_update or not _is_newer_version(tag, VERSION):
+        return
+
+    _notified_update = tag
+    url = data.get("html_url", f"https://github.com/{GITHUB_REPO}/releases/latest")
+    msg = (
+        f"🆕 Nouvelle version disponible : *{tag}*\n"
+        f"Version installée : `{VERSION}`\n"
+        f"[Voir les changements]({url})"
+    )
+    for uid in ALLOWED_USER_IDS:
+        try:
+            await context.bot.send_message(uid, msg, parse_mode="Markdown", disable_web_page_preview=True)
+        except Exception as e:
+            logger.warning(f"Could not notify user {uid} about update: {e}")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -251,6 +299,49 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text("❌ Résultat expiré, refais une recherche.")
         return
 
+    result = results[idx]
+    if result.get("ext") == "epub" and len(ALLOWED_FORMATS) > 1:
+        title = result.get("title") or "ce livre"
+        fmt_buttons = [
+            InlineKeyboardButton("📥 EPUB", callback_data=f"dlfmt_epub_{idx}") if "epub" in ALLOWED_FORMATS else None,
+            InlineKeyboardButton("📄 PDF", callback_data=f"dlfmt_pdf_{idx}") if "pdf" in ALLOWED_FORMATS else None,
+        ]
+        keyboard = InlineKeyboardMarkup([
+            [b for b in fmt_buttons if b],
+            [InlineKeyboardButton("⛔ Annuler", callback_data="cancel_dl")],
+        ])
+        await query.edit_message_text(
+            f"📚 « {title[:60]} »\nQuel format veux-tu ?",
+            reply_markup=keyboard,
+        )
+        return
+
+    # Format unique configuré : on télécharge directement
+    to_pdf = result.get("ext") == "epub" and ALLOWED_FORMATS == ["pdf"]
+    await _do_download(query, context, idx, to_pdf=to_pdf)
+
+
+async def handle_download_fmt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    if not _is_allowed(update):
+        return
+
+    m = re.match(r"^dlfmt_(epub|pdf)_(\d+)$", query.data or "")
+    if not m:
+        return
+
+    fmt, idx = m.group(1), int(m.group(2))
+    await _do_download(query, context, idx, to_pdf=(fmt == "pdf"))
+
+
+async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, to_pdf: bool) -> None:
+    results = context.user_data.get("results", [])
+    if idx >= len(results):
+        await query.edit_message_text("❌ Résultat expiré, refais une recherche.")
+        return
+
     def _progress_bar(pct: int) -> str:
         filled = pct // 10
         return "▰" * filled + "▱" * (10 - filled)
@@ -360,27 +451,82 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     title = result.get("title") or "livre"
     ext = result.get("ext") or "epub"
 
+    send_path = file_path
+    send_ext = ext
+    pdf_path = None
+    if to_pdf and ext == "epub":
+        try:
+            await query.edit_message_text(f"🔄 Conversion en PDF de « {title[:50]} »...")
+            pdf_path = await converter.epub_to_pdf(file_path)
+            send_path = pdf_path
+            send_ext = "pdf"
+        except Exception as e:
+            logger.warning(f"PDF conversion failed: {e}")
+            await query.edit_message_text("⚠️ Conversion PDF échouée, envoi en EPUB à la place.")
+
     try:
+        # VirusTotal scan (skipped if not configured)
+        vt_caption = ""
+        if virustotal.VT_API_KEY:
+            try:
+                _vt_frames = [
+                    f"🔍 Analyse antivirus de « {title[:45]} » .",
+                    f"🔍 Analyse antivirus de « {title[:45]} » ..",
+                    f"🔍 Analyse antivirus de « {title[:45]} » ...",
+                ]
+
+                async def _animate_vt():
+                    i = 0
+                    try:
+                        while True:
+                            try:
+                                await query.edit_message_text(_vt_frames[i % len(_vt_frames)])
+                            except Exception:
+                                pass
+                            i += 1
+                            await asyncio.sleep(1)
+                    except asyncio.CancelledError:
+                        pass
+
+                vt_anim = asyncio.create_task(_animate_vt())
+                try:
+                    stats = await virustotal.scan_file(send_path)
+                finally:
+                    vt_anim.cancel()
+                if stats:
+                    malicious = stats.get("malicious", 0)
+                    suspicious = stats.get("suspicious", 0)
+                    if malicious > 0:
+                        await query.edit_message_text(
+                            f"🚨 Fichier bloqué — détecté comme malveillant par {malicious} scanner(s) VirusTotal."
+                        )
+                        return
+                    elif suspicious > 0:
+                        vt_caption = f"\n⚠️ Signalé comme suspect par {suspicious} scanner(s) VirusTotal"
+            except Exception as e:
+                logger.warning(f"VirusTotal scan failed: {e}")
+                vt_caption = "\n⚠️ Analyse VirusTotal indisponible"
 
         safe_title = re.sub(r'[^\w\s\-]', '', title).strip()[:60] or "livre"
-        filename = f"{safe_title}.{ext}"
+        filename = f"{safe_title}.{send_ext}"
         await query.edit_message_text(f"📤 Envoi de « {title} »...")
 
-        with open(file_path, "rb") as f:
+        with open(send_path, "rb") as f:
             await query.message.reply_document(
                 document=f,
                 filename=filename,
-                caption=f"📖 {title}",
+                caption=f"📖 {title}{vt_caption}",
             )
 
         await query.edit_message_text(f"✅ Envoyé ! Bonne lecture 📖")
     finally:
-        # Clean up temp file (not the watcher path — owned by the download client)
-        if file_path and file_path.startswith(tempfile.gettempdir()):
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
+        # Clean up temp files (not watcher paths — owned by the download client)
+        for path in (file_path, pdf_path):
+            if path and path.startswith(tempfile.gettempdir()):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
 
 
 async def handle_confirm_non_epub(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -446,13 +592,27 @@ def main() -> None:
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_search)
     )
     app.add_handler(CallbackQueryHandler(handle_download, pattern=r"^dl_\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_download_fmt, pattern=r"^dlfmt_(epub|pdf)_\d+$"))
     app.add_handler(CallbackQueryHandler(handle_confirm_non_epub, pattern=r"^confirm_non_epub$"))
     app.add_handler(CallbackQueryHandler(handle_cancel_search, pattern=r"^cancel_search$"))
     app.add_handler(CallbackQueryHandler(handle_cancel_download, pattern=r"^cancel_dl$"))
 
+    if GITHUB_REPO:
+        app.job_queue.run_repeating(check_for_updates, interval=86400, first=30)
+        logger.info(f"Update checks enabled for {GITHUB_REPO} (every 24h)")
+
     _cleanup_orphaned_temp_files()
     if os.environ.get("ANNA_ARCHIVE_URL", "").startswith("http://"):
         logger.warning("ANNA_ARCHIVE_URL uses unencrypted HTTP — HTTPS is recommended")
+
+    logger.info(f"--- maman-books v{VERSION} ---")
+    logger.info(f"  Anna's Archive : {'✓ ' + os.environ.get('ANNA_ARCHIVE_URL', '') if os.environ.get('ANNA_ARCHIVE_URL') else '✗ désactivée'}")
+    logger.info(f"  Prowlarr       : {'✓ ' + os.environ.get('PROWLARR_URL', '') if os.environ.get('PROWLARR_URL') else '✗ désactivé'}")
+    logger.info(f"  Formats        : {', '.join(ALLOWED_FORMATS)}")
+    logger.info(f"  VirusTotal     : {'✓ activé' if virustotal.VT_API_KEY else '✗ désactivé'}")
+    logger.info(f"  Mises à jour   : {'✓ ' + GITHUB_REPO if GITHUB_REPO else '✗ désactivées'}")
+    logger.info(f"  Limite fichier : {MAX_FILE_SIZE // 1024 // 1024} MB{'  [local Bot API]' if LOCAL_API_SERVER else ''}")
+    logger.info(f"  Utilisateurs   : {len(ALLOWED_USER_IDS)} autorisé(s)")
     logger.info("Bot started.")
     app.run_polling(drop_pending_updates=True)
 

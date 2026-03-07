@@ -103,6 +103,33 @@ ANNA_ARCHIVE_URL=
 
 Both sources are optional and independent — you can enable one, the other, or both. At least one must be configured for the bot to return results.
 
+**Optional — Format & conversion:**
+
+| Variable | Description |
+|---|---|
+| `ALLOWED_FORMATS` | Formats to offer when an epub is found. Accepted values: `epub`, `pdf`, or `epub,pdf` (default). If only one value is set, no format question is asked. PDF conversion uses PyMuPDF — no system dependencies required. |
+
+Format selection only applies to epub results (the only format the bot can convert from). PDF, mobi, and other formats are always sent as-is.
+
+**Optional — VirusTotal** (scans downloaded files before sending):
+
+| Variable | Description |
+|---|---|
+| `VIRUSTOTAL_API_KEY` | Your VirusTotal API key. Leave empty to disable. Free tier supports up to 4 requests/min. Files larger than 32 MB are skipped. |
+
+To get a free API key:
+1. Create an account at [virustotal.com](https://www.virustotal.com)
+2. Go to your profile (top-right) → **API key**
+3. Copy the key and paste it as `VIRUSTOTAL_API_KEY` in your `.env`
+
+The free tier is sufficient for personal use. The bot checks by file hash first — if VirusTotal already knows the file, no upload is needed and the result is near-instant.
+
+**Optional — Update notifications:**
+
+| Variable | Description |
+|---|---|
+| `GITHUB_REPO` | GitHub repository to watch for new releases, in `owner/repo` format. Defaults to `Zoeille/maman-books`. Set to empty to disable. |
+
 **Optional — Local Bot API server** (only needed if you want to send files larger than 50 MB):
 
 | Variable | Description |
@@ -125,7 +152,21 @@ pip install -r requirements.txt
 python bot.py
 ```
 
-The bot will start and log `Bot started.` when ready. Open Telegram, find your bot by its username, and send `/start`.
+The bot will start and print its active configuration, then log `Bot started.` when ready:
+
+```
+--- maman-books v1.1.0 ---
+  Anna's Archive : ✓ https://…
+  Prowlarr       : ✗ désactivé
+  Formats        : epub, pdf
+  VirusTotal     : ✓ activé
+  Mises à jour   : ✓ Zoeille/maman-books
+  Limite fichier : 50 MB
+  Utilisateurs   : 1 autorisé(s)
+Bot started.
+```
+
+Open Telegram, find your bot by its username, and send `/start`.
 
 To keep it running in the background on Linux/macOS:
 
@@ -189,4 +230,5 @@ docker compose logs -f bot
 2. Send `/start`
 3. Type any book title and send it
 4. The bot searches and shows a list of results — tap one to download
-5. The file is sent directly in the chat
+5. If the result is an epub and `ALLOWED_FORMATS` includes both formats, you'll be asked: **EPUB or PDF?**
+6. The file is sent directly in the chat — if VirusTotal is enabled, it's scanned first

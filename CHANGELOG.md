@@ -5,6 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.0] — 2026-03-07
+
+### Added
+
+- **PDF conversion** — epub results can now be sent as PDF. Powered by PyMuPDF (`pymupdf`), no system dependencies required. The format choice (EPUB / PDF) is shown as inline buttons before downloading; if only one format is configured the question is skipped.
+- **`ALLOWED_FORMATS` env var** — controls which formats are offered (`epub`, `pdf`, or both). Defaults to `epub,pdf`.
+- **VirusTotal integration** (`virustotal.py`) — downloaded files are scanned before being sent. Checks by SHA-256 hash first (avoids redundant uploads for known files), then uploads and polls for the result. Malicious files are blocked; suspicious files are sent with a warning in the caption; scan errors result in a caption warning without blocking the file. Disabled when `VIRUSTOTAL_API_KEY` is absent. The scanning message shows animated dots so the user knows it's in progress.
+- **Automatic update notifications** — on startup and every 24 hours, the bot checks the latest GitHub release and notifies all allowed users via Telegram if a newer version is available. Controlled by `GITHUB_REPO` (defaults to `Zoeille/maman-books`). Notifications are deduplicated within a process run.
+
+### Fixed
+
+- `python-telegram-bot[job-queue]` extra now declared in `requirements.txt` — `JobQueue` was silently unavailable without it.
+
+### Changed
+
+- Merged the double loop over `ALLOWED_USER_IDS` at startup into a single pass.
+- Bot logs its active configuration at startup (sources, formats, VirusTotal, update checks, file size limit, user count).
+
+### Refactored
+
+- `_is_safe_url` extracted to `utils.py` — was duplicated in `anna_archive.py` and `downloader.py`.
+- `handle_download` split into `handle_download` (format selection) + `handle_download_fmt` + `_do_download` to separate concerns and avoid duplication.
+
+---
+
 ## [1.0.0] — 2026-03-07
 
 ### Added
