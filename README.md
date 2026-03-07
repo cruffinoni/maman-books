@@ -180,6 +180,8 @@ nohup python bot.py &
 
 Make sure Docker and Docker Compose are installed.
 
+A pre-built image is available at **`ghcr.io/zoeille/maman-books:latest`** — no need to build locally.
+
 ### Without local Bot API (50 MB file limit)
 
 Edit `docker-compose.yml` and remove the `depends_on` block and the `telegram-bot-api` service — they are only needed for the local API server.
@@ -187,7 +189,7 @@ Edit `docker-compose.yml` and remove the `depends_on` block and the `telegram-bo
 Then run:
 
 ```bash
-docker compose up -d bot --build
+docker compose up -d bot
 ```
 
 Check the logs to confirm it's running:

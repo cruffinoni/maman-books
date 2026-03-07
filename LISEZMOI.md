@@ -166,6 +166,18 @@ Ouvre Telegram, trouve ton bot par son nom d'utilisateur, envoie `/start` et c'e
 
 ---
 
+## Pour les utilisateurs avancés — Docker
+
+Si tu utilises Docker, une image toute prête est disponible :
+
+```
+ghcr.io/zoeille/maman-books:latest
+```
+
+Le fichier `docker-compose.yml` est déjà configuré pour l'utiliser.
+
+---
+
 ## En cas de problème
 
 - **"Python n'est pas reconnu"** → tu as oublié de cocher "Add Python to PATH" pendant l'installation. Désinstalle Python et recommence l'étape 2.
