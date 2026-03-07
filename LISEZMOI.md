@@ -20,8 +20,8 @@
 
 ## Étape 1 — Télécharger le projet
 
-1. En haut de cette page GitHub, clique sur le bouton vert **`<> Code`**
-2. Clique sur **Download ZIP**
+1. Va sur la page des releases : **[github.com/Zoeille/maman-books/releases](https://github.com/Zoeille/maman-books/releases)**
+2. Clique sur **Source code (zip)** sous la dernière version
 3. Une fois téléchargé, **fais un clic droit** sur le fichier ZIP → **Extraire tout** (ou "Décompresser")
 4. Choisis un endroit facile à retrouver (par exemple ton Bureau)
 
