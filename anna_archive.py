@@ -47,7 +47,6 @@ async def _check_redirect(response: httpx.Response) -> None:
 
 
 MAX_HTML_SIZE = 5 * 1024 * 1024  # 5 MB max for intermediate HTML pages
-SEARCH_URL = f"{_BASE_URL}/search.json"
 BOOK_PAGE_URL = _BASE_URL + "/md5/{md5}"
 VALID_CONTENT_TYPES = {
     "application/epub+zip",
@@ -64,48 +63,8 @@ async def search(query: str) -> list[dict]:
     """Search Anna's Archive for books. Returns list of result dicts."""
     if not _BASE_URL:
         return []
-    params = {
-        "q": query,
-        "lang": "",
-        "content": "book_any",
-        "ext": "epub,pdf,mobi",
-        "page": "1",
-    }
     async with httpx.AsyncClient(headers=HEADERS, timeout=15, follow_redirects=True, event_hooks={"response": [_check_redirect]}) as client:
-        try:
-            resp = await client.get(SEARCH_URL, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            return _parse_json(data)
-        except Exception as e:
-            logger.warning(f"Anna's Archive JSON API failed: {e}, trying HTML fallback")
-            return await _search_html(client, query)
-
-
-def _parse_json(data: list) -> list[dict]:
-    results = []
-    for item in data:
-        try:
-            md5 = item.get("md5") or item.get("file", {}).get("md5")
-            if not md5 or not _validate_md5(md5):
-                continue
-            ext = item.get("file", {}).get("extension") or item.get("extension", "")
-            size = item.get("file", {}).get("filesize") or item.get("filesize") or 0
-            title = item.get("title") or ""
-            author = item.get("author") or ""
-            results.append({
-                "source": "anna",
-                "title": title,
-                "author": author,
-                "ext": _sanitize_ext(ext),
-                "size_bytes": int(size) if size else 0,
-                "md5": md5,
-                "download_url": f"https://libgen.rocks/get.php?md5={md5}",
-                "is_torrent": False,
-            })
-        except Exception as e:
-            logger.debug(f"Skipping Anna's Archive item: {e}")
-    return results
+        return await _search_html(client, query)
 
 
 async def _search_html(client: httpx.AsyncClient, query: str) -> list[dict]:
