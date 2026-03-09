@@ -5,11 +5,12 @@ import os
 
 import httpx
 
+from exceptions import VirusTotalError
+
 logger = logging.getLogger(__name__)
 
-VT_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY", "")
-VT_BASE = "https://www.virustotal.com/api/v3"
-VT_MAX_SIZE = 32 * 1024 * 1024  # 32 MB — free tier upload limit
+_VT_BASE = "https://www.virustotal.com/api/v3"
+_VT_MAX_SIZE = 32 * 1024 * 1024
 
 
 def _sha256(path: str) -> str:
@@ -20,45 +21,42 @@ def _sha256(path: str) -> str:
     return h.hexdigest()
 
 
-async def scan_file(file_path: str) -> dict | None:
+async def scan_file(file_path: str, api_key: str) -> dict | None:
     """
-    Scan a file with VirusTotal. Returns stats dict or None if VT disabled or file too large.
+    Scan a file with VirusTotal. Returns stats dict or None if api_key empty or file too large.
     Stats keys: malicious, suspicious, undetected, harmless, timeout, failure, type-unsupported.
     """
-    if not VT_API_KEY:
+    if not api_key:
         return None
 
     size = os.path.getsize(file_path)
-    if size > VT_MAX_SIZE:
+    if size > _VT_MAX_SIZE:
         logger.info(f"VirusTotal: file too large ({size / 1024 / 1024:.1f} MB), skipping scan")
         return None
 
-    headers = {"x-apikey": VT_API_KEY}
+    headers = {"x-apikey": api_key}
 
     async with httpx.AsyncClient(headers=headers) as client:
-        # Check by hash first — avoids a redundant upload if VT already knows the file
-        sha256 = await asyncio.get_event_loop().run_in_executor(None, _sha256, file_path)
-        resp = await client.get(f"{VT_BASE}/files/{sha256}", timeout=15)
+        sha256 = await asyncio.get_running_loop().run_in_executor(None, _sha256, file_path)
+        resp = await client.get(f"{_VT_BASE}/files/{sha256}", timeout=15)
         if resp.status_code == 200:
             stats = resp.json()["data"]["attributes"]["last_analysis_stats"]
-            logger.info(f"VirusTotal: existing report for {sha256[:12]}… — {stats}")
+            logger.info(f"VirusTotal: existing report for {sha256[:12]}... — {stats}")
             return stats
 
-        # Not yet known — upload the file
-        logger.info(f"VirusTotal: uploading file ({size / 1024 / 1024:.1f} MB)…")
+        logger.info(f"VirusTotal: uploading file ({size / 1024 / 1024:.1f} MB)...")
         with open(file_path, "rb") as f:
             resp = await client.post(
-                f"{VT_BASE}/files",
+                f"{_VT_BASE}/files",
                 files={"file": (os.path.basename(file_path), f)},
                 timeout=120,
             )
         resp.raise_for_status()
         analysis_id = resp.json()["data"]["id"]
 
-        # Poll until analysis is complete (up to 90 s)
         for _ in range(18):
             await asyncio.sleep(5)
-            resp = await client.get(f"{VT_BASE}/analyses/{analysis_id}", timeout=15)
+            resp = await client.get(f"{_VT_BASE}/analyses/{analysis_id}", timeout=15)
             resp.raise_for_status()
             data = resp.json()["data"]
             if data["attributes"]["status"] == "completed":
@@ -66,4 +64,4 @@ async def scan_file(file_path: str) -> dict | None:
                 logger.info(f"VirusTotal: analysis complete — {stats}")
                 return stats
 
-    raise TimeoutError("VirusTotal analysis timed out after 90 s")
+    raise VirusTotalError("VirusTotal analysis timed out after 90 s")

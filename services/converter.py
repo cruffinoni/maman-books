@@ -16,7 +16,7 @@ def ebook_convert_available() -> bool:
 
 
 def _convert_sync(epub_path: str) -> str:
-    """Blocking epub→PDF conversion using PyMuPDF."""
+    """Blocking epub->PDF conversion using PyMuPDF."""
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", prefix="maman_") as f:
         pdf_path = f.name
     try:
@@ -36,12 +36,12 @@ def _convert_sync(epub_path: str) -> str:
 
 async def epub_to_pdf(epub_path: str) -> str:
     """Convert an epub file to PDF. Returns path to PDF temp file."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _convert_sync, epub_path)
 
 
 def _convert_to_format_sync(epub_path: str, fmt: str) -> str:
-    """Blocking epub→MOBI/AZW3 conversion. Uses Calibre if available, else PyMuPDF."""
+    """Blocking epub->MOBI/AZW3 conversion. Uses Calibre if available, else PyMuPDF."""
     suffix = f".{fmt}"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="maman_") as f:
         output_path = f.name
@@ -82,11 +82,11 @@ def _convert_with_calibre(input_path: str, output_path: str) -> None:
 
 async def epub_to_mobi(epub_path: str) -> str:
     """Convert an epub file to MOBI. Returns path to MOBI temp file."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _convert_to_format_sync, epub_path, "mobi")
 
 
 async def epub_to_azw3(epub_path: str) -> str:
     """Convert an epub file to AZW3. Returns path to AZW3 temp file."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _convert_to_format_sync, epub_path, "azw3")

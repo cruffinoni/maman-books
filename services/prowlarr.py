@@ -1,30 +1,33 @@
 import httpx
-import os
 import logging
+
+from models import SearchResult
 
 logger = logging.getLogger(__name__)
 
 
-def _client() -> httpx.AsyncClient:
-    base_url = os.environ.get("PROWLARR_URL", "").rstrip("/")
-    api_key = os.environ.get("PROWLARR_API_KEY", "")
-    return httpx.AsyncClient(
-        base_url=base_url,
-        headers={"X-Api-Key": api_key},
-        timeout=20,
-    )
+def _guess_ext(item: dict) -> str:
+    title = (item.get("title") or "").lower()
+    for ext in ["epub", "pdf", "mobi", "azw3"]:
+        if ext in title:
+            return ext
+    return "epub"
 
 
-async def search(query: str) -> list[dict]:
-    """Search Prowlarr for books. Returns list of result dicts."""
-    if not os.environ.get("PROWLARR_URL"):
+async def search(query: str, url: str, api_key: str) -> list[SearchResult]:
+    """Search Prowlarr for books. Returns list of SearchResult."""
+    if not url:
         return []
     params = {
         "query": query,
         "categories[]": ["7000", "7020"],
         "type": "search",
     }
-    async with _client() as client:
+    async with httpx.AsyncClient(
+        base_url=url,
+        headers={"X-Api-Key": api_key},
+        timeout=20,
+    ) as client:
         try:
             resp = await client.get("/api/v1/search", params=params)
             resp.raise_for_status()
@@ -47,35 +50,32 @@ async def search(query: str) -> list[dict]:
             or item.get("downloadProtocol", "").lower() == "torrent"
         )
 
-        results.append({
-            "source": "prowlarr",
-            "title": item.get("title") or "",
-            "author": "",
-            "ext": _guess_ext(item),
-            "size_bytes": item.get("size") or 0,
-            "guid": guid,
-            "indexer_id": item.get("indexerId") or 0,
-            "download_url": dl_url,
-            "magnet_url": magnet,
-            "is_torrent": is_torrent,
-            "seeders": item.get("seeders") or 0,
-        })
+        results.append(SearchResult(
+            source="prowlarr",
+            title=item.get("title") or "",
+            author="",
+            ext=_guess_ext(item),
+            size_bytes=item.get("size") or 0,
+            guid=guid,
+            indexer_id=item.get("indexerId") or 0,
+            download_url=dl_url,
+            magnet_url=magnet,
+            is_torrent=is_torrent,
+            seeders=item.get("seeders") or 0,
+            md5="",
+        ))
 
     return results
 
 
-def _guess_ext(item: dict) -> str:
-    title = (item.get("title") or "").lower()
-    for ext in ["epub", "pdf", "mobi", "azw3"]:
-        if ext in title:
-            return ext
-    return "epub"
-
-
-async def grab(indexer_id: int, guid: str) -> None:
+async def grab(indexer_id: int, guid: str, url: str, api_key: str) -> None:
     """Tell Prowlarr to grab (send to download client) a result by guid."""
     payload = {"guid": guid, "indexerId": indexer_id}
-    async with _client() as client:
+    async with httpx.AsyncClient(
+        base_url=url,
+        headers={"X-Api-Key": api_key},
+        timeout=20,
+    ) as client:
         try:
             resp = await client.post("/api/v1/download", json=payload)
             resp.raise_for_status()

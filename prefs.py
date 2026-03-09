@@ -24,11 +24,6 @@ async def get(user_id: int) -> dict:
             return {}
 
 
-async def get_all(user_id: int) -> dict:
-    """Alias for get()."""
-    return await get(user_id)
-
-
 async def set(user_id: int, key: str, value: Any) -> None:
     """Set a preference key for a user. Atomic write via temp file."""
     async with _lock:
