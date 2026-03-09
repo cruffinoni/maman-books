@@ -38,7 +38,6 @@ async def wait_for_file(
     title_words = _normalize(title)
     timeout_seconds = timeout_minutes * 60
 
-    # Snapshot existing files
     try:
         existing = set(os.listdir(download_path))
     except FileNotFoundError:
@@ -64,16 +63,6 @@ async def wait_for_file(
             if ext not in BOOK_EXTENSIONS:
                 continue
             if _matches(fname, title_words):
-                full_path = os.path.join(download_path, fname)
-                logger.info(f"Found matching file: {full_path}")
-                return full_path
-
-        # Also check if any existing file now matches (in case snapshot was wrong)
-        for fname in current:
-            ext = os.path.splitext(fname)[1].lower()
-            if ext not in BOOK_EXTENSIONS:
-                continue
-            if fname not in existing and _matches(fname, title_words):
                 full_path = os.path.join(download_path, fname)
                 logger.info(f"Found matching file: {full_path}")
                 return full_path
