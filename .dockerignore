@@ -1,5 +1,12 @@
 .env
+.env.*
+.git
+.gitignore
+.idea
 __pycache__
+**/__pycache__
 *.pyc
 *.pyo
-.git
+*.md
+user_prefs.json
+.dockerignore
