@@ -228,6 +228,31 @@ async def handle_dest_kindle(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _do_download(query, context, idx, desired_fmt=fmt, destination="kindle", lang=lang)
 
 
+def _prowlarr_first_candidates(
+    clicked: SearchResult,
+    all_candidates: list[SearchResult],
+) -> tuple[list[SearchResult], set[int]]:
+    norm_clicked = re.sub(r"[^\w]", "", (clicked.title or "")).lower()[:35]
+    seen_ids: set[int] = set()
+    ordered: list[SearchResult] = []
+
+    for priority_group in (
+        [r for r in all_candidates if r.source == "prowlarr" and not r.is_torrent],
+        [r for r in all_candidates if r.source == "prowlarr" and r.is_torrent],
+    ):
+        for r in priority_group:
+            norm = re.sub(r"[^\w]", "", (r.title or "")).lower()[:35]
+            if norm == norm_clicked and id(r) not in seen_ids:
+                ordered.append(r)
+                seen_ids.add(id(r))
+
+    if id(clicked) not in seen_ids:
+        ordered.append(clicked)
+        seen_ids.add(id(clicked))
+
+    return ordered, seen_ids
+
+
 async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desired_fmt: str = "epub", destination: str = "telegram", lang: str = "fr") -> None:
     config: Config = context.bot_data["config"]
     st = _state(context)
@@ -236,13 +261,16 @@ async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desi
         await query.edit_message_text(t("dl.expired", lang))
         return
 
+    all_candidates = st.all_candidates or results
+    prowlarr_first, seen_ids = _prowlarr_first_candidates(results[idx], all_candidates)
+    attempt_list = prowlarr_first + [r for r in results[idx:] if id(r) not in seen_ids]
+
     cancel_kb = _cancel_kb(lang)
 
-    async def _try_download(start_idx: int) -> tuple[str, SearchResult] | None | str:
-        """Try results from start_idx onwards, return (file_path, result), None, or 'mirrors'."""
+    async def _try_download(attempt_list: list[SearchResult]) -> tuple[str, SearchResult] | None | str:
+        """Try each result in attempt_list, return (file_path, result), None, or 'mirrors'."""
         any_mirror_failure = False
-        for i in range(start_idx, len(results)):
-            result = results[i]
+        for i, result in enumerate(attempt_list):
             title = result.title or "livre"
             ext = result.ext or "epub"
             is_torrent = result.is_torrent
@@ -250,7 +278,7 @@ async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desi
             if desired_fmt in ("mobi", "azw3", "pdf") and ext not in ("epub", "pdf"):
                 continue
 
-            if i > start_idx:
+            if i > 0:
                 logger.info(f"Auto-retry on result {i}: {title!r}")
                 await query.edit_message_text(t("dl.auto_retry", lang, title=title), reply_markup=cancel_kb)
 
@@ -330,7 +358,7 @@ async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desi
 
         return "mirrors" if any_mirror_failure else None
 
-    download_task = asyncio.create_task(_try_download(idx))
+    download_task = asyncio.create_task(_try_download(attempt_list))
     st.active_dl_task = download_task
     try:
         while not download_task.done():

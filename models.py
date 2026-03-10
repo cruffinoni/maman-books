@@ -21,6 +21,7 @@ class SearchResult:
 @dataclass
 class DownloadState:
     results: list[SearchResult] = field(default_factory=list)
+    all_candidates: list[SearchResult] = field(default_factory=list)
     pending_format: dict[int, str] = field(default_factory=dict)
     pending_non_epub: bool = False
     waiting_for: str = ""

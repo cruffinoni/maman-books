@@ -105,6 +105,7 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     scored = rank(combined, pq)
     all_results = [r for _, r in sorted(zip(scored, combined), key=lambda x: x[0], reverse=True)]
     filtered = [r for r in all_results if not (r.size_bytes > config.max_file_size)]
+    st.all_candidates = filtered
 
     seen_titles: set[str] = set()
     results: list[SearchResult] = []
@@ -132,6 +133,7 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         exts = list({r.ext for r in non_epub_results if r.ext})
         ext_str = ", ".join(exts).upper()
         st.results = results
+        st.all_candidates = filtered
         st.pending_non_epub = True
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(t("search.non_epub_btn", lang, ext=ext_str), callback_data="confirm_non_epub")],
