@@ -146,16 +146,30 @@ async def _get_download_links(client: httpx.AsyncClient, md5: str, base_url: str
         resp = await client.get(page_url)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
+        slow_partner_links = []
         links = []
         for a in soup.select("a[href]"):
             href = a.get("href", "")
             text = a.get_text(strip=True).lower()
-            if any(kw in text for kw in ["download", "telecharger", "get", "mirror", "libgen", "lol"]):
+            if "slow" in text and "partner" in text:
+                li = a.find_parent("li")
+                li_text = li.get_text(strip=True).lower() if li else text
+                if "waitlist" in li_text:
+                    continue
+                resolved = urljoin(page_url, href)
+                if not resolved.startswith("http"):
+                    continue
+                if ".onion" not in resolved and _is_safe_url(resolved):
+                    slow_partner_links.append(resolved)
+            elif any(kw in text for kw in ["download", "telecharger", "get", "mirror", "libgen", "lol"]):
                 if href.startswith("http") and md5.lower() in href.lower() and _is_safe_url(href):
                     links.append(href)
             elif href.startswith("http") and md5.lower() in href.lower() and _is_safe_url(href):
                 links.append(href)
-        links.append(f"{base_url}/slow_download/{md5}/0/0")
+        fallback = f"{base_url}/slow_download/{md5}/0/0"
+        links = slow_partner_links + links
+        if fallback not in links:
+            links.append(fallback)
         logger.info(f"Found {len(links)} download links for md5={md5}: {[redact_url(u) for u in links]}")
         return links
     except Exception as e:
