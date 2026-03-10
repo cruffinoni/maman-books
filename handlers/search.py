@@ -149,11 +149,12 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     for i, r in enumerate(results):
         if r.ext != "epub" and has_epub:
             continue
-        icon = "direct" if not r.is_torrent else "torrent"
-        title_short = r.title[:45] + "..." if len(r.title) > 45 else r.title
-        label = f"[{icon}] {title_short}"
+        source_tag = "torrent" if r.is_torrent else (r.ext.upper() if r.ext else "DL")
+        title_short = r.title[:40] + "..." if len(r.title) > 40 else r.title
+        label = title_short
         if r.author:
-            label += f" - {r.author[:20]}"
+            label += f"  {r.author[:18]}"
+        label += f"  \u2014 {source_tag}"
         buttons.append([InlineKeyboardButton(label, callback_data=f"dl_{i}")])
 
     keyboard = InlineKeyboardMarkup(buttons)
@@ -179,11 +180,14 @@ async def handle_confirm_non_epub(update: Update, context: ContextTypes.DEFAULT_
 
     buttons = []
     for i, r in enumerate(results):
-        icon = "direct" if not r.is_torrent else "torrent"
-        title_short = (r.title or "?")[:40]
-        ext = r.ext or "?"
+        title_short = (r.title or "?")[:35]
+        ext = (r.ext or "?").upper()
         size = _fmt_size(r.size_bytes, lang)
-        buttons.append([InlineKeyboardButton(f"[{icon}] {title_short} — {ext} — {size}", callback_data=f"dl_{i}")])
+        if r.is_torrent:
+            label = f"{title_short}  \u2014 torrent {size}"
+        else:
+            label = f"{title_short}  \u2014 {ext} {size}"
+        buttons.append([InlineKeyboardButton(label, callback_data=f"dl_{i}")])
     await query.edit_message_text(
         t("search.choose_result", lang),
         reply_markup=InlineKeyboardMarkup(buttons),

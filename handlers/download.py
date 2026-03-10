@@ -22,9 +22,20 @@ def _cancel_kb(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton(t("dl.cancel_btn", lang), callback_data="cancel_dl")]])
 
 
+_BAR_FILLED = "\u25b0"
+_BAR_EMPTY = "\u25b1"
+_BAR_WIDTH = 10
+
+
 def _progress_bar(pct: int) -> str:
-    filled = pct // 10
-    return ">" * filled + "-" * (10 - filled)
+    filled = pct // _BAR_WIDTH
+    return _BAR_FILLED * filled + _BAR_EMPTY * (_BAR_WIDTH - filled)
+
+
+def _escape_md(text: str) -> str:
+    for ch in ("*", "_", "`", "["):
+        text = text.replace(ch, "\\" + ch)
+    return text
 
 
 async def _animate_preparing(query, title: str, started: asyncio.Event, lang: str, reply_markup=None) -> None:
@@ -261,14 +272,16 @@ async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desi
                     pct = min(int(downloaded / total * 100), 99)
                     bar = _progress_bar(pct)
                     await query.edit_message_text(
-                        t("dl.progress_with_total", lang, title=_title, bar=bar, pct=pct,
+                        t("dl.progress_with_total", lang, title=_escape_md(_title), bar=bar, pct=pct,
                           downloaded=_fmt_size(downloaded, lang), total=_fmt_size(total, lang)),
                         reply_markup=cancel_kb,
+                        parse_mode="Markdown",
                     )
                 else:
                     await query.edit_message_text(
-                        t("dl.progress_no_total", lang, title=_title, downloaded=_fmt_size(downloaded, lang)),
+                        t("dl.progress_no_total", lang, title=_escape_md(_title), downloaded=_fmt_size(downloaded, lang)),
                         reply_markup=cancel_kb,
+                        parse_mode="Markdown",
                     )
 
             dl_task = asyncio.create_task(
