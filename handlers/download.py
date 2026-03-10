@@ -11,12 +11,15 @@ import prefs
 from config import Config
 from exceptions import AllMirrorsFailedError, FileTooLargeError, DownloadError, MailError, VirusTotalError
 from handlers._common import _is_allowed, _state, _fmt_size
+from i18n import get_lang, t
 from models import SearchResult
 from services import converter, downloader, mailer, virustotal
 
 logger = logging.getLogger(__name__)
 
-_CANCEL_KB = InlineKeyboardMarkup([[InlineKeyboardButton("Annuler", callback_data="cancel_dl")]])
+
+def _cancel_kb(lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton(t("dl.cancel_btn", lang), callback_data="cancel_dl")]])
 
 
 def _progress_bar(pct: int) -> str:
@@ -24,9 +27,10 @@ def _progress_bar(pct: int) -> str:
     return ">" * filled + "-" * (10 - filled)
 
 
-async def _animate_preparing(query, title: str, started: asyncio.Event, reply_markup=None) -> None:
+async def _animate_preparing(query, title: str, started: asyncio.Event, lang: str, reply_markup=None) -> None:
     """Show animated dots until streaming starts or task is cancelled."""
-    frames = ["Recherche du fichier .", "Recherche du fichier ..", "Recherche du fichier ..."]
+    base = t("dl.searching_file", lang)
+    frames = [f"{base} .", f"{base} ..", f"{base} ..."]
     i = 0
     try:
         while not started.is_set():
@@ -48,6 +52,7 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not _is_allowed(update, config):
         return
 
+    lang = get_lang(update)
     data = query.data or ""
     if not data.startswith("dl_"):
         return
@@ -60,7 +65,7 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     st = _state(context)
     results = st.results
     if idx >= len(results):
-        await query.edit_message_text("Resultat expire, refais une recherche.")
+        await query.edit_message_text(t("dl.expired", lang))
         return
 
     result = results[idx]
@@ -75,10 +80,10 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         ]
         keyboard = InlineKeyboardMarkup([
             [b for b in fmt_buttons if b],
-            [InlineKeyboardButton("Annuler", callback_data="cancel_dl")],
+            [InlineKeyboardButton(t("dl.cancel_btn", lang), callback_data="cancel_dl")],
         ])
         await query.edit_message_text(
-            f"« {title[:60]} »\nQuel format veux-tu ?",
+            t("dl.choose_format", lang, title=title[:60]),
             reply_markup=keyboard,
         )
         return
@@ -100,14 +105,14 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         keyboard = InlineKeyboardMarkup([
             dest_buttons,
-            [InlineKeyboardButton("Annuler", callback_data="cancel_dl")],
+            [InlineKeyboardButton(t("dl.cancel_btn", lang), callback_data="cancel_dl")],
         ])
         await query.edit_message_text(
-            f"« {title[:50]} »\n\nOu envoyer ?",
+            t("dl.choose_dest", lang, title=title[:50]),
             reply_markup=keyboard,
         )
     else:
-        await _do_download(query, context, idx, desired_fmt=desired_fmt, destination="telegram")
+        await _do_download(query, context, idx, desired_fmt=desired_fmt, destination="telegram", lang=lang)
 
 
 async def handle_download_fmt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -118,6 +123,7 @@ async def handle_download_fmt(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not _is_allowed(update, config):
         return
 
+    lang = get_lang(update)
     m = re.match(r"^dlfmt_(epub|pdf|mobi|azw3)_(\d+)$", query.data or "")
     if not m:
         return
@@ -127,7 +133,7 @@ async def handle_download_fmt(update: Update, context: ContextTypes.DEFAULT_TYPE
     st = _state(context)
     results = st.results
     if idx >= len(results):
-        await query.edit_message_text("Resultat expire, refais une recherche.")
+        await query.edit_message_text(t("dl.expired", lang))
         return
 
     user_prefs = await prefs.get(update.effective_user.id)
@@ -147,14 +153,14 @@ async def handle_download_fmt(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         keyboard = InlineKeyboardMarkup([
             dest_buttons,
-            [InlineKeyboardButton("Annuler", callback_data="cancel_dl")],
+            [InlineKeyboardButton(t("dl.cancel_btn", lang), callback_data="cancel_dl")],
         ])
         await query.edit_message_text(
-            f"« {title[:50]} »\n\nOu envoyer ?",
+            t("dl.choose_dest", lang, title=title[:50]),
             reply_markup=keyboard,
         )
     else:
-        await _do_download(query, context, idx, desired_fmt=fmt, destination="telegram")
+        await _do_download(query, context, idx, desired_fmt=fmt, destination="telegram", lang=lang)
 
 
 async def handle_dest_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -165,13 +171,14 @@ async def handle_dest_telegram(update: Update, context: ContextTypes.DEFAULT_TYP
     if not _is_allowed(update, config):
         return
 
+    lang = get_lang(update)
     m = re.match(r"^dest_telegram_(\d+)$", query.data or "")
     if not m:
         return
 
     idx = int(m.group(1))
     fmt = _state(context).pending_format.get(idx, "epub")
-    await _do_download(query, context, idx, desired_fmt=fmt, destination="telegram")
+    await _do_download(query, context, idx, desired_fmt=fmt, destination="telegram", lang=lang)
 
 
 async def handle_dest_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -182,13 +189,14 @@ async def handle_dest_email(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if not _is_allowed(update, config):
         return
 
+    lang = get_lang(update)
     m = re.match(r"^dest_email_(\d+)$", query.data or "")
     if not m:
         return
 
     idx = int(m.group(1))
     fmt = _state(context).pending_format.get(idx, "epub")
-    await _do_download(query, context, idx, desired_fmt=fmt, destination="email")
+    await _do_download(query, context, idx, desired_fmt=fmt, destination="email", lang=lang)
 
 
 async def handle_dest_kindle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -199,29 +207,32 @@ async def handle_dest_kindle(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not _is_allowed(update, config):
         return
 
+    lang = get_lang(update)
     m = re.match(r"^dest_kindle_(\d+)$", query.data or "")
     if not m:
         return
 
     idx = int(m.group(1))
     fmt = _state(context).pending_format.get(idx, "epub")
-    await _do_download(query, context, idx, desired_fmt=fmt, destination="kindle")
+    await _do_download(query, context, idx, desired_fmt=fmt, destination="kindle", lang=lang)
 
 
-async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desired_fmt: str = "epub", destination: str = "telegram") -> None:
+async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desired_fmt: str = "epub", destination: str = "telegram", lang: str = "fr") -> None:
     config: Config = context.bot_data["config"]
     st = _state(context)
     results = st.results
     if idx >= len(results):
-        await query.edit_message_text("Resultat expire, refais une recherche.")
+        await query.edit_message_text(t("dl.expired", lang))
         return
+
+    cancel_kb = _cancel_kb(lang)
 
     async def _try_download(start_idx: int) -> tuple[str, SearchResult] | None | str:
         """Try results from start_idx onwards, return (file_path, result), None, or 'mirrors'."""
         any_mirror_failure = False
         for i in range(start_idx, len(results)):
             result = results[i]
-            t = result.title or "livre"
+            title = result.title or "livre"
             ext = result.ext or "epub"
             is_torrent = result.is_torrent
 
@@ -229,36 +240,35 @@ async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desi
                 continue
 
             if i > start_idx:
-                logger.info(f"Auto-retry on result {i}: {t!r}")
-                await query.edit_message_text(f"Essai du resultat suivant : « {t} »...", reply_markup=_CANCEL_KB)
+                logger.info(f"Auto-retry on result {i}: {title!r}")
+                await query.edit_message_text(t("dl.auto_retry", lang, title=title), reply_markup=cancel_kb)
 
             if is_torrent:
                 await query.edit_message_text(
-                    f"Envoi vers le client torrent pour « {t} »...\n"
-                    "Surveillance du dossier de telechargement...",
-                    reply_markup=_CANCEL_KB,
+                    t("dl.torrent_waiting", lang, title=title),
+                    reply_markup=cancel_kb,
                 )
             else:
-                await query.edit_message_text("Preparation...", reply_markup=_CANCEL_KB)
+                await query.edit_message_text(t("dl.preparing", lang), reply_markup=cancel_kb)
 
             streaming_started = asyncio.Event()
-            dots_task = asyncio.create_task(_animate_preparing(query, t, streaming_started, reply_markup=_CANCEL_KB))
+            dots_task = asyncio.create_task(_animate_preparing(query, title, streaming_started, lang, reply_markup=cancel_kb))
 
-            async def on_progress(downloaded: int, total: int, _t=t) -> None:
+            async def on_progress(downloaded: int, total: int, _title=title) -> None:
                 if not streaming_started.is_set():
                     streaming_started.set()
                 if total:
                     pct = min(int(downloaded / total * 100), 99)
                     bar = _progress_bar(pct)
                     await query.edit_message_text(
-                        f"Telechargement « {_t} »\n"
-                        f"{bar} {pct}%  ({_fmt_size(downloaded)} / {_fmt_size(total)})",
-                        reply_markup=_CANCEL_KB,
+                        t("dl.progress_with_total", lang, title=_title, bar=bar, pct=pct,
+                          downloaded=_fmt_size(downloaded, lang), total=_fmt_size(total, lang)),
+                        reply_markup=cancel_kb,
                     )
                 else:
                     await query.edit_message_text(
-                        f"Telechargement « {_t} »\n{_fmt_size(downloaded)} telecharges...",
-                        reply_markup=_CANCEL_KB,
+                        t("dl.progress_no_total", lang, title=_title, downloaded=_fmt_size(downloaded, lang)),
+                        reply_markup=cancel_kb,
                     )
 
             dl_task = asyncio.create_task(
@@ -270,8 +280,8 @@ async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desi
                     if not dl_task.done():
                         try:
                             await query.edit_message_text(
-                                f"Toujours en attente pour « {t} »...\nMerci de patienter.",
-                                reply_markup=_CANCEL_KB,
+                                t("dl.torrent_still_waiting", lang, title=title),
+                                reply_markup=cancel_kb,
                             )
                         except Exception:
                             pass
@@ -323,12 +333,9 @@ async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desi
 
     if outcome is None or isinstance(outcome, str):
         if outcome == "mirrors":
-            msg_text = (
-                "Toutes les sources de telechargement sont indisponibles pour l'instant.\n"
-                "Reessaie dans quelques minutes ou essaie un autre titre."
-            )
+            msg_text = t("dl.all_mirrors_failed", lang)
         else:
-            msg_text = "Aucun resultat disponible dans la limite de taille.\nRefais une recherche."
+            msg_text = t("dl.no_result_in_size", lang)
         await query.edit_message_text(msg_text)
         return
 
@@ -343,15 +350,15 @@ async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desi
     if ext == "epub" and desired_fmt != "epub":
         try:
             if desired_fmt == "pdf":
-                await query.edit_message_text(f"Conversion en PDF de « {title[:50]} »...")
+                await query.edit_message_text(t("dl.converting", lang, fmt="PDF", title=title[:50]))
                 converted_path = await converter.epub_to_pdf(file_path)
                 send_ext = "pdf"
             elif desired_fmt == "mobi":
-                await query.edit_message_text(f"Conversion en MOBI de « {title[:50]} »...")
+                await query.edit_message_text(t("dl.converting", lang, fmt="MOBI", title=title[:50]))
                 converted_path = await converter.epub_to_mobi(file_path)
                 send_ext = "mobi"
             elif desired_fmt == "azw3":
-                await query.edit_message_text(f"Conversion en AZW3 de « {title[:50]} »...")
+                await query.edit_message_text(t("dl.converting", lang, fmt="AZW3", title=title[:50]))
                 converted_path = await converter.epub_to_azw3(file_path)
                 send_ext = "azw3"
 
@@ -359,7 +366,7 @@ async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desi
                 send_path = converted_path
         except Exception as e:
             logger.warning(f"Conversion to {desired_fmt} failed: {e}")
-            await query.edit_message_text(f"Conversion {desired_fmt.upper()} echouee, envoi en EPUB a la place.")
+            await query.edit_message_text(t("dl.conversion_failed", lang, fmt=desired_fmt.upper()))
             send_path = file_path
             send_ext = ext
 
@@ -367,11 +374,8 @@ async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desi
         vt_caption = ""
         if config.virustotal_api_key:
             try:
-                _vt_frames = [
-                    f"Analyse antivirus de « {title[:45]} » .",
-                    f"Analyse antivirus de « {title[:45]} » ..",
-                    f"Analyse antivirus de « {title[:45]} » ...",
-                ]
+                vt_base = t("dl.vt_scanning", lang, title=title[:45])
+                _vt_frames = [f"{vt_base} .", f"{vt_base} ..", f"{vt_base} ..."]
 
                 async def _animate_vt():
                     i = 0
@@ -392,65 +396,63 @@ async def _do_download(query, context: ContextTypes.DEFAULT_TYPE, idx: int, desi
                 except VirusTotalError as e:
                     logger.warning(f"VirusTotal scan failed: {e}")
                     stats = None
-                    vt_caption = "\nAnalyse VirusTotal indisponible"
+                    vt_caption = t("dl.vt_unavailable", lang)
                 finally:
                     vt_anim.cancel()
                 if stats:
                     malicious = stats.get("malicious", 0)
                     suspicious = stats.get("suspicious", 0)
                     if malicious > 0:
-                        await query.edit_message_text(
-                            f"Fichier bloque — detecte comme malveillant par {malicious} scanner(s) VirusTotal."
-                        )
+                        await query.edit_message_text(t("dl.vt_blocked", lang, count=malicious))
                         return
                     elif suspicious > 0:
-                        vt_caption = f"\nSignale comme suspect par {suspicious} scanner(s) VirusTotal"
+                        vt_caption = t("dl.vt_suspicious", lang, count=suspicious)
             except Exception as e:
                 logger.warning(f"VirusTotal scan failed: {e}")
-                vt_caption = "\nAnalyse VirusTotal indisponible"
+                vt_caption = t("dl.vt_unavailable", lang)
 
         safe_title = re.sub(r'[^\w\s\-]', '', title).strip()[:60] or "livre"
         filename = f"{safe_title}.{send_ext}"
 
         if destination == "telegram":
-            await query.edit_message_text(f"Envoi de « {title} »...")
+            await query.edit_message_text(t("dl.sending", lang, title=title))
             with open(send_path, "rb") as f:
                 await query.message.reply_document(
                     document=f,
                     filename=filename,
                     caption=f"{title}{vt_caption}",
                 )
-            await query.edit_message_text("Envoye ! Bonne lecture")
+            await query.edit_message_text(t("dl.sent_ok", lang))
 
         elif destination == "email":
             user_id = query.from_user.id
             user_prefs = await prefs.get(user_id)
             email_addr = user_prefs.get("email")
             if not email_addr:
-                await query.edit_message_text("Adresse email non configuree. Utilise /settings")
+                await query.edit_message_text(t("dl.email_not_configured", lang))
                 return
             try:
-                await query.edit_message_text(f"Envoi par email a {email_addr}...")
+                await query.edit_message_text(t("dl.email_sending", lang, addr=email_addr))
                 await mailer.send_file(send_path, filename, email_addr, kindle=False, smtp=config.smtp)
-                await query.edit_message_text(f"Email envoye a {email_addr}")
+                await query.edit_message_text(t("dl.email_sent", lang, addr=email_addr))
             except MailError as e:
                 logger.warning(f"Email send failed: {e}")
-                await query.edit_message_text("Envoi email echoue. Verifie la configuration SMTP dans /settings.")
+                await query.edit_message_text(t("dl.email_failed", lang))
 
         elif destination == "kindle":
             user_id = query.from_user.id
             user_prefs = await prefs.get(user_id)
             kindle_email = user_prefs.get("kindle_email")
             if not kindle_email:
-                await query.edit_message_text("Adresse Kindle non configuree. Utilise /settings")
+                await query.edit_message_text(t("dl.kindle_not_configured", lang))
                 return
             try:
-                await query.edit_message_text(f"Envoi vers Kindle ({kindle_email})...")
+                await query.edit_message_text(t("dl.kindle_sending", lang, addr=kindle_email))
                 await mailer.send_file(send_path, filename, kindle_email, kindle=True, smtp=config.smtp)
-                await query.edit_message_text("Envoye vers votre Kindle !")
+                await query.edit_message_text(t("dl.kindle_sent", lang))
             except MailError as e:
                 logger.warning(f"Kindle send failed: {e}")
-                await query.edit_message_text("Envoi Kindle echoue. Verifie l'adresse Kindle et la config SMTP dans /settings.")
+                await query.edit_message_text(t("dl.kindle_failed", lang))
     finally:
         for path in (file_path, converted_path):
             if path and path.startswith(tempfile.gettempdir()):
@@ -468,11 +470,12 @@ async def handle_cancel_download(update: Update, context: ContextTypes.DEFAULT_T
     if not _is_allowed(update, config):
         return
 
+    lang = get_lang(update)
     st = _state(context)
     task = st.active_dl_task
     st.active_dl_task = None
     if task and not task.done():
         task.cancel()
-        await query.edit_message_text("Telechargement annule.")
+        await query.edit_message_text(t("dl.download_cancelled", lang))
     else:
-        await query.edit_message_text("Aucun telechargement en cours.")
+        await query.edit_message_text(t("dl.no_active_download", lang))

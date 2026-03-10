@@ -10,6 +10,7 @@ import prefs
 from config import Config
 from handlers._common import _is_allowed, _state, _fmt_size
 from handlers.onboarding import handle_onboarding_kindle, handle_onboarding_summary
+from i18n import get_lang, t
 from models import SearchResult
 from services import anna_archive, prowlarr
 from services.scorer import parse_query, rank
@@ -30,16 +31,17 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not _is_allowed(update, config):
         return
 
+    lang = get_lang(update)
     st = _state(context)
 
     if st.waiting_for in ("email", "kindle_email", "onb_email", "onb_kindle"):
         user_input = update.message.text.strip()
         if not user_input:
-            await update.message.reply_text("Adresse vide. Essaie a nouveau.")
+            await update.message.reply_text(t("search.empty_address", lang))
             return
 
         if not re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
-            await update.message.reply_text("Adresse email invalide. Essaie a nouveau.")
+            await update.message.reply_text(t("search.invalid_email", lang))
             return
 
         user_id = update.effective_user.id
@@ -47,18 +49,14 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if st.waiting_for == "onb_email":
             await prefs.set(user_id, "email", user_input)
             st.waiting_for = ""
-            await update.message.reply_text(f"Email configure : `{user_input}`", parse_mode="Markdown")
+            await update.message.reply_text(t("search.email_saved", lang, email=user_input), parse_mode="Markdown")
             await asyncio.sleep(0.5)
             await handle_onboarding_kindle(update, context)
             return
         elif st.waiting_for == "onb_kindle":
             await prefs.set(user_id, "kindle_email", user_input)
             st.waiting_for = ""
-            await update.message.reply_text(
-                f"Adresse Kindle configuree : `{user_input}`\n\n"
-                "Prefere *MOBI* ou *AZW3* pour envoyer vers Kindle.",
-                parse_mode="Markdown"
-            )
+            await update.message.reply_text(t("search.kindle_saved", lang, email=user_input), parse_mode="Markdown")
             await asyncio.sleep(0.5)
             await handle_onboarding_summary(update, context)
             return
@@ -66,20 +64,16 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if st.waiting_for == "email":
             await prefs.set(user_id, "email", user_input)
             st.waiting_for = ""
-            await update.message.reply_text(f"Email configure : `{user_input}`", parse_mode="Markdown")
+            await update.message.reply_text(t("search.email_saved", lang, email=user_input), parse_mode="Markdown")
         else:
             await prefs.set(user_id, "kindle_email", user_input)
             st.waiting_for = ""
-            await update.message.reply_text(
-                f"Adresse Kindle configuree : `{user_input}`\n\n"
-                "Prefere *MOBI* ou *AZW3* pour envoyer vers Kindle.",
-                parse_mode="Markdown"
-            )
+            await update.message.reply_text(t("search.kindle_saved", lang, email=user_input), parse_mode="Markdown")
         return
 
     now = time.monotonic()
     if now - st.last_search_at < config.rate_limit_seconds:
-        await update.message.reply_text(f"Attends {config.rate_limit_seconds} secondes entre deux recherches.")
+        await update.message.reply_text(t("search.rate_limit", lang, seconds=config.rate_limit_seconds))
         return
     st.last_search_at = now
 
@@ -88,10 +82,10 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     if len(query) > config.max_query_length:
-        await update.message.reply_text(f"Requete trop longue (max {config.max_query_length} caracteres).")
+        await update.message.reply_text(t("search.query_too_long", lang, max_len=config.max_query_length))
         return
 
-    msg = await update.message.reply_text("Recherche en cours...")
+    msg = await update.message.reply_text(t("search.in_progress", lang))
 
     aa_results, pr_results = await asyncio.gather(
         _safe_search(anna_archive.search, query, config.anna_archive_url, source_name="Anna's Archive"),
@@ -131,9 +125,7 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     non_epub_results = [r for r in results if r.ext != "epub"]
 
     if not results:
-        await msg.edit_text(
-            f"Aucun resultat trouve pour « {query} ».\nEssaie un autre titre ou orthographe."
-        )
+        await msg.edit_text(t("search.no_results", lang, query=query))
         return
 
     if not has_epub and non_epub_results:
@@ -142,12 +134,11 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         st.results = results
         st.pending_non_epub = True
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"Oui, envoie-moi en {ext_str}", callback_data="confirm_non_epub")],
-            [InlineKeyboardButton("Non, annuler", callback_data="cancel_search")],
+            [InlineKeyboardButton(t("search.non_epub_btn", lang, ext=ext_str), callback_data="confirm_non_epub")],
+            [InlineKeyboardButton(t("search.cancel_btn", lang), callback_data="cancel_search")],
         ])
         await msg.edit_text(
-            f"Pas d'epub disponible pour « {query} ».\n"
-            f"J'ai trouve {len(results)} resultat(s) en {ext_str}. Ca ira ?",
+            t("search.non_epub_prompt", lang, query=query, count=len(results), ext=ext_str),
             reply_markup=keyboard,
         )
         return
@@ -167,10 +158,8 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     keyboard = InlineKeyboardMarkup(buttons)
     n = len(buttons)
-    await msg.edit_text(
-        f"{n} resultat{'s' if n > 1 else ''} trouve{'s' if n > 1 else ''} :",
-        reply_markup=keyboard,
-    )
+    header = t("search.results_one", lang) if n == 1 else t("search.results_many", lang, count=n)
+    await msg.edit_text(header, reply_markup=keyboard)
 
 
 async def handle_confirm_non_epub(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -181,10 +170,11 @@ async def handle_confirm_non_epub(update: Update, context: ContextTypes.DEFAULT_
     if not _is_allowed(update, config):
         return
 
+    lang = get_lang(update)
     st = _state(context)
     results = st.results
     if not results:
-        await query.edit_message_text("Resultat expire, refais une recherche.")
+        await query.edit_message_text(t("search.expired", lang))
         return
 
     buttons = []
@@ -192,10 +182,10 @@ async def handle_confirm_non_epub(update: Update, context: ContextTypes.DEFAULT_
         icon = "direct" if not r.is_torrent else "torrent"
         title_short = (r.title or "?")[:40]
         ext = r.ext or "?"
-        size = _fmt_size(r.size_bytes)
+        size = _fmt_size(r.size_bytes, lang)
         buttons.append([InlineKeyboardButton(f"[{icon}] {title_short} — {ext} — {size}", callback_data=f"dl_{i}")])
     await query.edit_message_text(
-        "Choisis un resultat :",
+        t("search.choose_result", lang),
         reply_markup=InlineKeyboardMarkup(buttons),
     )
 
@@ -203,5 +193,6 @@ async def handle_confirm_non_epub(update: Update, context: ContextTypes.DEFAULT_
 async def handle_cancel_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
+    lang = get_lang(update)
     _state(context).results = []
-    await query.edit_message_text("Recherche annulee. Envoie un nouveau titre quand tu veux !")
+    await query.edit_message_text(t("search.cancelled", lang))
