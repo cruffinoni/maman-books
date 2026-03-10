@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 from handlers import onboarding, settings, search, download
+from i18n import get_lang, t
 
 logger = logging.getLogger(__name__)
 
@@ -12,9 +13,8 @@ async def _global_error_handler(update: object, context: ContextTypes.DEFAULT_TY
     logger.error("Unhandled exception in handler", exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:
         try:
-            await update.effective_message.reply_text(
-                "Une erreur interne s'est produite. Reessaie."
-            )
+            lang = get_lang(update)
+            await update.effective_message.reply_text(t("error.internal", lang))
         except Exception:
             pass
 
@@ -39,7 +39,10 @@ def register_all_handlers(app: Application) -> None:
     app.add_handler(CallbackQueryHandler(settings.handle_setkindl_prompt, pattern=r"^setkindl_prompt$"))
     app.add_handler(CallbackQueryHandler(settings.handle_prefs_delete_confirm, pattern=r"^prefs_delete_confirm$"))
     app.add_handler(CallbackQueryHandler(settings.handle_prefs_delete_execute, pattern=r"^prefs_delete_execute$"))
+    app.add_handler(CallbackQueryHandler(onboarding.handle_onb_lang, pattern=r"^onb_lang_(fr|en)$"))
     app.add_handler(CallbackQueryHandler(onboarding.handle_onb_fmt, pattern=r"^onb_fmt_\w+$"))
     app.add_handler(CallbackQueryHandler(onboarding.handle_onb_skip_email, pattern=r"^onb_skip_email$"))
     app.add_handler(CallbackQueryHandler(onboarding.handle_onb_skip_kindle, pattern=r"^onb_skip_kindle$"))
+    app.add_handler(CallbackQueryHandler(settings.handle_setlang_menu, pattern=r"^setlang_menu$"))
+    app.add_handler(CallbackQueryHandler(settings.handle_setlang, pattern=r"^setlang_(fr|en)$"))
     app.add_error_handler(_global_error_handler)
