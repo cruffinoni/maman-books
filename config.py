@@ -6,7 +6,7 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 _VALID_FORMATS = {"epub", "pdf", "mobi", "azw3"}
-_VERSION = "1.5.1"
+_VERSION = "1.5.2"
 
 
 def _int_env(var: str, default: str) -> int:
