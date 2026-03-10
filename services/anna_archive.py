@@ -154,7 +154,7 @@ async def _get_download_links(client: httpx.AsyncClient, md5: str, base_url: str
             if "slow" in text and "partner" in text:
                 li = a.find_parent("li")
                 li_text = li.get_text(strip=True).lower() if li else text
-                if "waitlist" in li_text:
+                if "waitlist" in li_text and "no waitlist" not in li_text:
                     continue
                 resolved = urljoin(page_url, href)
                 if not resolved.startswith("http"):
