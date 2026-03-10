@@ -12,6 +12,7 @@ from handlers._common import _is_allowed, _state, _fmt_size
 from handlers.onboarding import handle_onboarding_kindle, handle_onboarding_summary
 from models import SearchResult
 from services import anna_archive, prowlarr
+from services.scorer import parse_query, rank
 
 logger = logging.getLogger(__name__)
 
@@ -105,15 +106,10 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     for r in pr_results:
         logger.info(f"  [PR] {r.title!r} — {r.ext} — {_fmt_size(r.size_bytes)} — torrent={r.is_torrent}")
 
-    def _sort_key(r: SearchResult):
-        return (
-            0 if r.ext in ("epub", "mobi", "azw3") else 1,
-            0 if not r.is_torrent else 1,
-        )
-
-    direct = [r for r in aa_results + pr_results if not r.is_torrent]
-    torrents = [r for r in pr_results if r.is_torrent]
-    all_results = sorted(direct, key=_sort_key) + torrents
+    pq = parse_query(query)
+    combined = aa_results + pr_results
+    scored = rank(combined, pq)
+    all_results = [r for _, r in sorted(zip(scored, combined), key=lambda x: x[0], reverse=True)]
     filtered = [r for r in all_results if not (r.size_bytes > config.max_file_size)]
 
     seen_titles: set[str] = set()
