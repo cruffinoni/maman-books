@@ -162,9 +162,9 @@ async def _get_download_links(client: httpx.AsyncClient, md5: str, base_url: str
                 if ".onion" not in resolved and _is_safe_url(resolved):
                     slow_partner_links.append(resolved)
             elif any(kw in text for kw in ["download", "telecharger", "get", "mirror", "libgen", "lol"]):
-                if href.startswith("http") and md5.lower() in href.lower() and _is_safe_url(href):
+                if href.startswith("http") and md5.lower() in href.lower() and ".onion" not in href and _is_safe_url(href):
                     links.append(href)
-            elif href.startswith("http") and md5.lower() in href.lower() and _is_safe_url(href):
+            elif href.startswith("http") and md5.lower() in href.lower() and ".onion" not in href and _is_safe_url(href):
                 links.append(href)
         fallback = f"{base_url}/slow_download/{md5}/0/0"
         links = slow_partner_links + links
